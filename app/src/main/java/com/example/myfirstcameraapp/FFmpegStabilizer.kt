@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -16,87 +18,50 @@ object FFmpegStabilizer {
 
     private val executor = Executors.newSingleThreadExecutor()
 
-    /**
-     * Main function you will call from MainActivity.
-     */
     fun stabilize(
         context: Context,
         source: Uri,
         onSuccess: (Uri) -> Unit,
         onError: (String) -> Unit
     ) {
+
         executor.execute {
             try {
-                val ffmpegPath = installFfmpeg(context)
-                if (ffmpegPath == null) {
-                    onError("FFmpeg binary missing in assets")
-                    return@execute
-                }
-
-                // Copy input to temp
+                // Copy input video to local temp
                 val inputFile = File(context.cacheDir, "input_${System.currentTimeMillis()}.mp4")
-                context.contentResolver.openInputStream(source)?.use { inp ->
-                    FileOutputStream(inputFile).use { out -> inp.copyTo(out) }
+                context.contentResolver.openInputStream(source)?.use { input ->
+                    FileOutputStream(inputFile).use { output -> input.copyTo(output) }
                 }
 
                 val outputFile = File(context.cacheDir, "stab_${System.currentTimeMillis()}.mp4")
 
-                // Run ffmpeg
-                val cmd = listOf(
-                    ffmpegPath,
-                    "-y",
-                    "-i", inputFile.absolutePath,
-                    "-vf", "deshake=rx=8:ry=8:edge=mirror",
-                    "-preset", "veryfast",
-                    "-c:v", "libx264",
-                    outputFile.absolutePath
-                )
+                val ffmpegCmd = "-y -i ${inputFile.absolutePath} " +
+                        "-vf deshake=rx=8:ry=8:edge=mirror " +
+                        "-preset veryfast -c:v libx264 " +
+                        outputFile.absolutePath
 
-                val process = ProcessBuilder(cmd)
-                    .redirectErrorStream(true)
-                    .start()
+                Log.d(TAG, "FFmpeg Command: $ffmpegCmd")
 
-                val log = process.inputStream.bufferedReader().readText()
-                val code = process.waitFor()
+                FFmpegKit.executeAsync(ffmpegCmd) { session ->
+                    val returnCode = session.returnCode
 
-                if (code != 0) {
-                    onError("FFmpeg failed ($code):\n$log")
-                    return@execute
-                }
-
-                // Save to gallery
-                val savedUri = saveToGallery(context, outputFile)
-                if (savedUri == null) {
-                    onError("Failed to save stabilized file")
-                } else {
-                    onSuccess(savedUri)
+                    if (ReturnCode.isSuccess(returnCode)) {
+                        val savedUri = saveToGallery(context, outputFile)
+                        if (savedUri != null) {
+                            onSuccess(savedUri)
+                        } else {
+                            onError("Failed to save stabilized file into gallery")
+                        }
+                    } else {
+                        val failLog = session.allLogsAsString
+                        onError("Stabilization failed: $failLog")
+                    }
                 }
 
             } catch (e: Exception) {
                 onError("Exception: ${e.message}")
+                e.printStackTrace()
             }
-        }
-    }
-
-    /**
-     * Copy ffmpeg from assets to internal storage, make it executable.
-     */
-    private fun installFfmpeg(context: Context): String? {
-        return try {
-            val inPath = "ffmpeg/armeabi-v7a/ffmpeg"
-            val input = context.assets.open(inPath)
-
-            val outDir = File(context.filesDir, "ffmpegbin")
-            if (!outDir.exists()) outDir.mkdirs()
-
-            val outFile = File(outDir, "ffmpeg")
-            FileOutputStream(outFile).use { input.copyTo(it) }
-            outFile.setExecutable(true)
-
-            outFile.absolutePath
-        } catch (e: Exception) {
-            Log.e(TAG, "installFfmpeg: ${e.message}")
-            null
         }
     }
 
@@ -111,13 +76,13 @@ object FFmpegStabilizer {
             }
 
             val uri = context.contentResolver.insert(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                values
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values
             ) ?: return null
 
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                file.inputStream().use { inp -> inp.copyTo(out) }
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
             }
+
             uri
         } catch (e: Exception) {
             Log.e(TAG, "saveToGallery: ${e.message}")

@@ -11,7 +11,7 @@ android {
     defaultConfig {
         applicationId = "com.example.myfirstcameraapp"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -29,12 +29,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "1.8"
     }
 
     buildFeatures {
@@ -61,6 +61,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+
+    implementation(files("libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar"))
+    implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // CameraX
     implementation("androidx.camera:camera-core:$camerax_version")
